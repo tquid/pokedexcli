@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+
+	"github.com/tquid/pokedexcli/internal/pokeapi"
 )
 
 type cliCommand struct {
@@ -14,16 +16,26 @@ type cliCommand struct {
 
 func initCommands() map[string]cliCommand {
 	return map[string]cliCommand{
-		"help": {
-			name:        "help",
-			description: "Displays a help message",
-			callback:    commandHelp,
-		},
 		"exit": {
 			name:        "exit",
 			description: "Exit the Pokedex",
 			callback:    commandExit,
 		},
+		"help": {
+			name:        "help",
+			description: "Displays a help message",
+			callback:    commandHelp,
+		},
+		"map": {
+			name:        "map",
+			description: "show next 20 map entries",
+			callback:    commandMap,
+		},
+		// "mapb": {
+		// 	name:        "mapb",
+		// 	description: "show previous 20 map entries",
+		// 	callback:    commandMapb,
+		// },
 	}
 }
 
@@ -34,6 +46,23 @@ func commandHelp() error {
 
 func commandExit() error {
 	os.Exit(0)
+	return nil
+}
+
+func commandMap() error {
+	cfg := pokeapi.Config{
+		Count:    0,
+		Next:     "",
+		Previous: "",
+		Results:  []pokeapi.LocationArea,
+	}
+	err := cfg.NextLocationAreas()
+	if err != nil {
+		fmt.Printf("Error getting next map chunk: %v\n", err)
+	}
+	for _, result := range cfg.Results {
+		fmt.Println(result.Name)
+	}
 	return nil
 }
 
@@ -50,6 +79,7 @@ func promptAndRead() (string, error) {
 
 func main() {
 	c := initCommands()
+
 	for {
 		command, err := promptAndRead()
 		if err != nil {
