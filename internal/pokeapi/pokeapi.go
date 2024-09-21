@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"time"
+
+	"github.com/tquid/pokedexcli/internal/pokecache"
 )
 
 type Direction int
@@ -29,6 +32,7 @@ type Config struct {
 type Client struct {
 	config *Config
 	apiUrl string
+	cache  *pokecache.Cache
 }
 
 func NewClient() *Client {
@@ -39,7 +43,8 @@ func NewClient() *Client {
 			Previous: "",
 			Results:  nil,
 		},
-		apiUrl: "https://pokeapi.co/api/v2/",
+		apiUrl: "https://pokeapi.co/api/v2",
+		cache:  pokecache.NewCache(time.Minute * 5),
 	}
 	return client
 }
@@ -58,12 +63,19 @@ func (c *Client) NextLocationAreas() error {
 	} else {
 		url = fmt.Sprintf("%s/location-area", c.apiUrl)
 	}
+	if body, hit := c.cache.Get(url); hit {
+		err := json.Unmarshal(body, c.config)
+		if err != nil {
+			return fmt.Errorf("can't unmarshal cache result: %w", err)
+		}
+		return nil
+	}
 	resp, err := http.Get(url)
 	if err != nil {
-		return fmt.Errorf("can't get %s: %v", url, err)
+		return fmt.Errorf("can't get %s: %w", url, err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("API call to %s failed: %v", url, err)
+		return fmt.Errorf("API call to %s failed: %w", url, err)
 	}
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -72,8 +84,9 @@ func (c *Client) NextLocationAreas() error {
 	defer resp.Body.Close()
 	err = json.Unmarshal(body, c.config)
 	if err != nil {
-		return fmt.Errorf("can't read response body: %v", err)
+		return fmt.Errorf("can't read response body: %w", err)
 	}
+	c.cache.Add(url, body)
 	return nil
 }
 
@@ -84,12 +97,19 @@ func (c *Client) PreviousLocationAreas() error {
 	} else {
 		return fmt.Errorf("can't go back at beginning of map")
 	}
+	if body, hit := c.cache.Get(url); hit {
+		err := json.Unmarshal(body, c.config)
+		if err != nil {
+			return fmt.Errorf("can't unmarshal cache result: %w", err)
+		}
+		return nil
+	}
 	resp, err := http.Get(url)
 	if err != nil {
-		return fmt.Errorf("can't get %s: %v", url, err)
+		return fmt.Errorf("can't get %s: %w", url, err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("API call to %s failed: %v", url, err)
+		return fmt.Errorf("API call to %s failed: %w", url, err)
 	}
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -98,8 +118,9 @@ func (c *Client) PreviousLocationAreas() error {
 	defer resp.Body.Close()
 	err = json.Unmarshal(body, c.config)
 	if err != nil {
-		return fmt.Errorf("can't read response body: %v", err)
+		return fmt.Errorf("can't read response body: %w", err)
 	}
+	c.cache.Add(url, body)
 	return nil
 }
 
