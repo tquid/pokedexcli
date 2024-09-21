@@ -14,7 +14,7 @@ type cliCommand struct {
 	callback    func() error
 }
 
-func initCommands() map[string]cliCommand {
+func initCommands(client *pokeapi.Client) map[string]cliCommand {
 	return map[string]cliCommand{
 		"exit": {
 			name:        "exit",
@@ -29,13 +29,13 @@ func initCommands() map[string]cliCommand {
 		"map": {
 			name:        "map",
 			description: "show next 20 map entries",
-			callback:    commandMap,
+			callback:    func() error { return commandMap(client) },
 		},
-		// "mapb": {
-		// 	name:        "mapb",
-		// 	description: "show previous 20 map entries",
-		// 	callback:    commandMapb,
-		// },
+		"mapb": {
+			name:        "mapb",
+			description: "show previous 20 map entries",
+			callback:    func() error { return commandMapb(client) },
+		},
 	}
 }
 
@@ -49,19 +49,24 @@ func commandExit() error {
 	return nil
 }
 
-func commandMap() error {
-	cfg := pokeapi.Config{
-		Count:    0,
-		Next:     "",
-		Previous: "",
-		Results:  []pokeapi.LocationArea,
-	}
-	err := cfg.NextLocationAreas()
+func commandMap(c *pokeapi.Client) error {
+	err := c.NextLocationAreas()
 	if err != nil {
 		fmt.Printf("Error getting next map chunk: %v\n", err)
 	}
-	for _, result := range cfg.Results {
-		fmt.Println(result.Name)
+	for _, name := range c.GetLocationNames() {
+		fmt.Println(name)
+	}
+	return nil
+}
+
+func commandMapb(c *pokeapi.Client) error {
+	err := c.PreviousLocationAreas()
+	if err != nil {
+		fmt.Printf("Error getting previous map chunk: %v\n", err)
+	}
+	for _, name := range c.GetLocationNames() {
+		fmt.Println(name)
 	}
 	return nil
 }
@@ -78,15 +83,16 @@ func promptAndRead() (string, error) {
 }
 
 func main() {
-	c := initCommands()
+	c := pokeapi.NewClient()
+	cmds := initCommands(c)
 
 	for {
 		command, err := promptAndRead()
 		if err != nil {
 			fmt.Printf("unable to read input: %v\n", err)
 		}
-		if _, exists := c[command]; exists {
-			c[command].callback()
+		if _, exists := cmds[command]; exists {
+			cmds[command].callback()
 		} else {
 			fmt.Printf("unknown command '%s'\n", command)
 		}
