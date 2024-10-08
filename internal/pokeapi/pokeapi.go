@@ -2,6 +2,7 @@ package pokeapi
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -75,11 +76,27 @@ type LocationArea struct {
 	} `json:"pokemon_encounters"`
 }
 
+type APIError struct {
+	StatusCode int
+	Err        error
+}
+
+func (e *APIError) Error() string {
+	return fmt.Sprintf("call to API failed: %v", e.Err)
+}
+
+func (e *APIError) Unwrap() error {
+	return e.Err
+}
+
+type Pokedex map[string]Pokemon
+
 type Config struct {
 	Count    int                `json:"count"`
 	Next     string             `json:"next"`
 	Previous string             `json:"previous"`
 	Results  []LocationAreaPage `json:"results"`
+	Pokedex  Pokedex            `json:"pokedex"`
 }
 
 type Client struct {
@@ -95,6 +112,7 @@ func NewClient() *Client {
 			Next:     "",
 			Previous: "",
 			Results:  nil,
+			Pokedex:  make(Pokedex),
 		},
 		apiUrl: "https://pokeapi.co/api/v2",
 		cache:  pokecache.NewCache(time.Minute * 5),
@@ -112,14 +130,23 @@ func (c *Client) IsNew() bool {
 func (c *Client) callAPI(url string) ([]byte, error) {
 	resp, err := http.Get(url)
 	if err != nil {
-		return nil, fmt.Errorf("can't get %s: %w", url, err)
+		return nil, &APIError{
+			StatusCode: resp.StatusCode,
+			Err:        fmt.Errorf("can't get %s: %w", url, err),
+		}
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("call to %s failed: %s", url, resp.Status)
+		return nil, &APIError{
+			StatusCode: resp.StatusCode,
+			Err:        fmt.Errorf("call to %s failed: %s", url, resp.Status),
+		}
 	}
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("can't read response body: err")
+		return nil, &APIError{
+			StatusCode: resp.StatusCode,
+			Err:        fmt.Errorf("can't read response body: err"),
+		}
 	}
 	defer resp.Body.Close()
 	return body, nil
@@ -174,7 +201,7 @@ func (c *Client) PreviousLocationAreas() error {
 	return nil
 }
 
-func PokemonListFromLocationArea(data []byte) ([]string, error) {
+func pokemonListFromLocationArea(data []byte) ([]string, error) {
 	var location LocationArea
 	err := json.Unmarshal(data, &location)
 	if err != nil {
@@ -190,7 +217,7 @@ func PokemonListFromLocationArea(data []byte) ([]string, error) {
 func (c *Client) ExploreArea(areaName string) ([]string, error) {
 	url := fmt.Sprintf("%s/location-area/%s", c.apiUrl, areaName)
 	if body, hit := c.cache.Get(url); hit {
-		pokemonList, err := PokemonListFromLocationArea(body)
+		pokemonList, err := pokemonListFromLocationArea(body)
 		if err != nil {
 			return nil, fmt.Errorf("cache read error: %w", err)
 		}
@@ -200,7 +227,7 @@ func (c *Client) ExploreArea(areaName string) ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("API error: %w", err)
 	}
-	pokemonList, err := PokemonListFromLocationArea(body)
+	pokemonList, err := pokemonListFromLocationArea(body)
 	if err != nil {
 		return nil, fmt.Errorf("can't read location area data: %w", err)
 	}
@@ -214,4 +241,34 @@ func (c *Client) GetLocationNames() []string {
 		names = append(names, result.Name)
 	}
 	return names
+}
+
+func (c *Client) GetPokemon(name string) (Pokemon, error) {
+	var pokemon Pokemon
+	url := fmt.Sprintf("%s/pokemon/%s", c.apiUrl, name)
+	if data, hit := c.cache.Get(url); hit {
+		err := json.Unmarshal(data, &pokemon)
+		if err != nil {
+			return Pokemon{}, fmt.Errorf("can't unmarshal cache result: %w", err)
+		}
+		return pokemon, nil
+	}
+	body, err := c.callAPI(url)
+	if err != nil {
+		var apiErr *APIError
+		if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusNotFound {
+			return Pokemon{}, fmt.Errorf("no such pokemon '%s'", name)
+		}
+		return Pokemon{}, fmt.Errorf("API error: %w", err)
+	}
+	err = json.Unmarshal(body, &pokemon)
+	if err != nil {
+		return Pokemon{}, fmt.Errorf("can't unmarshal pokemon result: %w", err)
+	}
+	c.cache.Add(url, body)
+	return pokemon, nil
+}
+
+func (c *Client) AddPokedexEntry(p Pokemon) {
+	c.config.Pokedex[p.Name] = p
 }

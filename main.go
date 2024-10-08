@@ -17,6 +17,11 @@ type cliCommand struct {
 
 func initCommands(client *pokeapi.Client) map[string]cliCommand {
 	return map[string]cliCommand{
+		"catch": {
+			name:        "catch",
+			description: "Try to catch a Pokemon",
+			callback:    func(params []string) error { return commandCatch(client, params) },
+		},
 		"exit": {
 			name:        "exit",
 			description: "Exit the Pokedex",
@@ -43,6 +48,25 @@ func initCommands(client *pokeapi.Client) map[string]cliCommand {
 			callback:    func([]string) error { return commandMapb(client) },
 		},
 	}
+}
+
+func commandCatch(c *pokeapi.Client, params []string) error {
+	if len(params) == 0 {
+		return fmt.Errorf("'catch' command requires a pokemon name, e.g. 'catch pikachu'")
+	}
+	pokemonName := params[0]
+	pokemon, err := c.GetPokemon(pokemonName)
+	if err != nil {
+		return fmt.Errorf("error getting pokemon info: %w", err)
+	}
+	fmt.Printf("Throwing a Pokeball at %s...\n", pokemonName)
+	if pokemon.Catch() {
+		fmt.Printf("%s was caught!\n", pokemonName)
+		c.AddPokedexEntry(pokemon)
+	} else {
+		fmt.Printf("%s escaped!\n", pokemonName)
+	}
+	return nil
 }
 
 func commandHelp([]string) error {
