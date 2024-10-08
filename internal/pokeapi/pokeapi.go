@@ -272,3 +272,16 @@ func (c *Client) GetPokemon(name string) (Pokemon, error) {
 func (c *Client) AddPokedexEntry(p Pokemon) {
 	c.config.Pokedex[p.Name] = p
 }
+
+func (c *Client) GetPokedexEntry(name string) (Pokemon, bool) {
+	val, ok := c.config.Pokedex[name]
+	return val, ok
+}
+
+func (c *Client) ListPokedex() []string {
+	var names []string
+	for _, pokemon := range c.config.Pokedex {
+		names = append(names, pokemon.Name)
+	}
+	return names
+}
